@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install build dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -33,48 +33,113 @@ jobs:
             meson ninja-build \
             xz-utils lz4 \
             7zip p7zip-full \
-            device-tree-compiler
+            device-tree-compiler \
+            bc kmod
 
-      - name: Install theos
+      - name: Install theos (manual step - requires theos setup)
         run: |
-          # Install theos and iPhoneOS SDK
-          git clone --depth 1 https://github.com/theos/theos.git ~/theos
-          echo 'export PATH="$HOME/theos/bin:$PATH"' >>~/.bashrc
-          export PATH="$HOME/theos/bin:$PATH"
-          theos-install
+          echo "============================================================="
+          echo "THEOS INSTALLATION REQUIRED"
+          echo "============================================================="
+          echo ""
+          echo "Theos is not pre-installed. To build Hakios iOS ports, you need:"
+          echo ""
+          echo "1. Install theos:"
+          echo "   git clone --depth 1 https://github.com/theos/theos.git ~/theos"
+          echo ""
+          echo "2. Install iPhoneOS SDK (requires macOS or proper SDK setup):"
+          echo "   - On macOS: install Xcode and command tools"
+          echo "   - On Linux: use theos prepackages or manually download SDK"
+          echo ""
+          echo "3. Add to PATH:"
+          echo "   export PATH=\"\$HOME/theos/bin:\$PATH\""
+          echo ""
+          echo "4. Run theos-install or build manually:"
+          echo "   cd ~/theos && make clean && make"
+          echo ""
+          echo "Alternatively, build dependencies locally and skip this step,"
+          echo "then run 'make loader' and 'make phone' locally."
+          echo ""
+          echo "============================================================="
+          echo "Skipping theos installation - please build locally"
+          echo "============================================================="
 
-      - name: Fetch iOS (placeholder)
+      - name: Install Python packages
         run: |
-          echo "iOS fetch would be done manually - about 7.4 GB"
-          # sysimage/fetch.sh would run here in a real setup
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
 
-      - name: Copy firmware (placeholder)
+      - name: Fetch iOS (placeholder - manual step)
         run: |
-          echo "Firmware would be copied from phone via pull-firmware.sh"
-          # devices/r8q/pull-firmware.sh would run here
+          echo "============================================================="
+          echo "iOS FETCH REQUIRED"
+          echo "============================================================="
+          echo ""
+          echo "iOS 16 (or requested version) must be fetched from Apple:"
+          echo ""
+          echo "1. Download iOS IPSW from Apple's public servers:"
+          echo "   - About 7.4 GB for iOS 16"
+          echo "   - Unpack into sysimage/ directory"
+          echo ""
+          echo "2. Or run manually:"
+          echo "   sysimage/fetch.sh"
+          echo ""
+          echo "============================================================="
+          echo "Skipping iOS fetch - please fetch manually first"
+          echo "============================================================="
 
-      - name: Build loader
+      - name: Copy phone firmware (placeholder)
         run: |
+          echo "============================================================="
+          echo "PHONE FIRMWARE COPY REQUIRED"
+          echo "============================================================="
+          echo ""
+          echo "Firmware must be copied from your Samsung Galaxy S20 FE (r8q):"
+          echo ""
+          echo "1. Enable USB debugging and rooted debugging in LineageOS"
+          echo "2. Connect phone to Linux PC via USB"
+          echo "3. Run firmware extraction:"
+          echo "   devices/r8q/pull-firmware.sh"
+          echo ""
+          echo "4. This fills fw-gpu-r8q/, fw-audio-r8q/, fw-wifi-r8q/ etc."
+          echo ""
+          echo "============================================================="
+          echo "Skipping firmware copy - run pull-firmware.sh manually"
+          echo "============================================================="
+
+      - name: Build Hakios loader
+        run: |
+          echo "Building Hakios loader..."
           make loader
         working-directory: /workspace
+        env:
+          PATH: "/workspace/.theos/bin:${PATH}"
 
-      - name: Build phone
+      - name: Build Hakios phone session
         run: |
+          echo "Building Hakios phone session..."
           make phone
         working-directory: /workspace
+        env:
+          PATH: "/workspace/.theos/bin:${PATH}"
 
       - name: Run Hakios
         run: |
+          echo "Running Hakios phone session..."
           make phone
         working-directory: /workspace
+        env:
+          PATH: "/workspace/.theos/bin:${PATH}"
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hakios-r8q-build
+          name: hakios-r8q-build-${{ github.run_number }}
           path: |
             devices/r8q/
             sysimage/
             loader
             kernel
+            fw-*
           retention-days: 30

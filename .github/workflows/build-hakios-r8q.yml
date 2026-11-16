@@ -1,0 +1,80 @@
+name: Build Hakios r8q
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git curl python3-pip python3-venv \
+            make clang lld flex bison gperf \
+            perl \
+            meson ninja-build \
+            xz-utils lz4 \
+            7zip p7zip-full \
+            device-tree-compiler
+
+      - name: Install theos
+        run: |
+          # Install theos and iPhoneOS SDK
+          git clone --depth 1 https://github.com/theos/theos.git ~/theos
+          echo 'export PATH="$HOME/theos/bin:$PATH"' >>~/.bashrc
+          export PATH="$HOME/theos/bin:$PATH"
+          theos-install
+
+      - name: Fetch iOS (placeholder)
+        run: |
+          echo "iOS fetch would be done manually - about 7.4 GB"
+          # sysimage/fetch.sh would run here in a real setup
+
+      - name: Copy firmware (placeholder)
+        run: |
+          echo "Firmware would be copied from phone via pull-firmware.sh"
+          # devices/r8q/pull-firmware.sh would run here
+
+      - name: Build loader
+        run: |
+          make loader
+        working-directory: /workspace
+
+      - name: Build phone
+        run: |
+          make phone
+        working-directory: /workspace
+
+      - name: Run Hakios
+        run: |
+          make phone
+        working-directory: /workspace
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hakios-r8q-build
+          path: |
+            devices/r8q/
+            sysimage/
+            loader
+            kernel
+          retention-days: 30

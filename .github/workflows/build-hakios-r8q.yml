@@ -1,4 +1,4 @@
-name: Build Hakios r8q
+name: Build Hakios r8q (macOS)
 
 on:
   push:
@@ -9,8 +9,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
+    runs-on: macos-latest
+    timeout-minutes: 240
 
     steps:
       - name: Checkout repository
@@ -18,75 +18,47 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Python
+      - name: Install Xcode Command Line Tools
+        run: |
+          xcode-select --install || true
+          echo "Waiting for XCode tools installation..."
+          sleep 5
+
+      - name: Install Python 3
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies
+      - name: Install theos (macOS)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git curl python3-pip python3-venv \
+          git clone --depth 1 https://github.com/theos/theos.git ~/theos
+          echo 'export PATH="$HOME/theos/bin:$PATH"' >>~/.zshrc
+          export PATH="$HOME/theos/bin:$PATH"
+          theos-install
+          theos bootstrap
+
+      - name: Install dependencies
+        run: |
+          brew install \
+            git curl python3 \
             make clang lld flex bison gperf \
             perl \
             meson ninja-build \
-            xz-utils lz4 \
-            7zip p7zip-full \
+            xz lz4 \
+            7zip \
             device-tree-compiler \
             bc kmod
 
-      - name: Install theos (manual step - requires theos setup)
-        run: |
-          echo "============================================================="
-          echo "THEOS INSTALLATION REQUIRED"
-          echo "============================================================="
-          echo ""
-          echo "Theos is not pre-installed. To build Hakios iOS ports, you need:"
-          echo ""
-          echo "1. Install theos:"
-          echo "   git clone --depth 1 https://github.com/theos/theos.git ~/theos"
-          echo ""
-          echo "2. Install iPhoneOS SDK (requires macOS or proper SDK setup):"
-          echo "   - On macOS: install Xcode and command tools"
-          echo "   - On Linux: use theos prepackages or manually download SDK"
-          echo ""
-          echo "3. Add to PATH:"
-          echo "   export PATH=\"\$HOME/theos/bin:\$PATH\""
-          echo ""
-          echo "4. Run theos-install or build manually:"
-          echo "   cd ~/theos && make clean && make"
-          echo ""
-          echo "Alternatively, build dependencies locally and skip this step,"
-          echo "then run 'make loader' and 'make phone' locally."
-          echo ""
-          echo "============================================================="
-          echo "Skipping theos installation - please build locally"
-          echo "============================================================="
-
-      - name: Install Python packages
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-
-      - name: Fetch iOS (placeholder - manual step)
+      - name: Fetch iOS (placeholder)
         run: |
           echo "============================================================="
           echo "iOS FETCH REQUIRED"
           echo "============================================================="
-          echo ""
           echo "iOS 16 (or requested version) must be fetched from Apple:"
-          echo ""
           echo "1. Download iOS IPSW from Apple's public servers:"
           echo "   - About 7.4 GB for iOS 16"
           echo "   - Unpack into sysimage/ directory"
-          echo ""
-          echo "2. Or run manually:"
-          echo "   sysimage/fetch.sh"
-          echo ""
-          echo "============================================================="
-          echo "Skipping iOS fetch - please fetch manually first"
+          echo "2. Or run manually: sysimage/fetch.sh"
           echo "============================================================="
 
       - name: Copy phone firmware (placeholder)
@@ -94,48 +66,36 @@ jobs:
           echo "============================================================="
           echo "PHONE FIRMWARE COPY REQUIRED"
           echo "============================================================="
-          echo ""
-          echo "Firmware must be copied from your Samsung Galaxy S20 FE (r8q):"
-          echo ""
-          echo "1. Enable USB debugging and rooted debugging in LineageOS"
-          echo "2. Connect phone to Linux PC via USB"
-          echo "3. Run firmware extraction:"
-          echo "   devices/r8q/pull-firmware.sh"
-          echo ""
-          echo "4. This fills fw-gpu-r8q/, fw-audio-r8q/, fw-wifi-r8q/ etc."
-          echo ""
-          echo "============================================================="
-          echo "Skipping firmware copy - run pull-firmware.sh manually"
+          echo "Firmware from your Samsung Galaxy S20 FE (r8q):"
+          echo "1. Enable USB debugging + rooted debugging in LineageOS"
+          echo "2. Connect phone to Mac via USB"
+          echo "3. Run: devices/r8q/pull-firmware.sh"
+          echo "4. Fills fw-gpu-r8q/, fw-audio-r8q/, fw-wifi-r8q/ etc."
           echo "============================================================="
 
       - name: Build Hakios loader
         run: |
-          echo "Building Hakios loader..."
-          make loader
+          make loaders
         working-directory: /workspace
         env:
-          PATH: "/workspace/.theos/bin:${PATH}"
+          PATH: "/opt/theos/bin:${PATH}"
 
-      - name: Build Hakios phone session
+      - name: Build Hakios kernel
         run: |
-          echo "Building Hakios phone session..."
-          make phone
+          make -C kernel all
         working-directory: /workspace
-        env:
-          PATH: "/workspace/.theos/bin:${PATH}"
 
       - name: Run Hakios
         run: |
-          echo "Running Hakios phone session..."
           make phone
         working-directory: /workspace
         env:
-          PATH: "/workspace/.theos/bin:${PATH}"
+          PATH: "/opt/theos/bin:${PATH}"
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hakios-r8q-build-${{ github.run_number }}
+          name: hakios-r8q-macos-${{ github.run_number }}
           path: |
             devices/r8q/
             sysimage/

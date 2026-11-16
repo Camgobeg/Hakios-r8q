@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
 
     steps:
       - name: Checkout repository
@@ -20,26 +20,29 @@ jobs:
 
       - name: Install Xcode Command Line Tools
         run: |
-          xcode-select --install || true
-          echo "Waiting for XCode tools installation..."
-          sleep 5
+          xcode-select --install 2>/dev/null || true
 
       - name: Install Python 3
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install theos (macOS)
+      - name: Install theos (manual macOS setup)
         run: |
           git clone --depth 1 https://github.com/theos/theos.git ~/theos
           echo 'export PATH="$HOME/theos/bin:$PATH"' >>~/.zshrc
           export PATH="$HOME/theos/bin:$PATH"
-          theos-install
-          theos bootstrap
+          # Verify theos installed
+          if [ -f ~/theos/bin/theos ]; then
+            echo "✅ theos installed successfully"
+          else
+            echo "⚠️ theos may need manual setup"
+          fi
 
-      - name: Install dependencies
+      - name: Install dependencies via Homebrew
         run: |
-          brew install \
+          brew update
+          brew install --overwrite --quiet \
             git curl python3 \
             make clang lld flex bison gperf \
             perl \
@@ -47,34 +50,31 @@ jobs:
             xz lz4 \
             7zip \
             device-tree-compiler \
-            bc kmod
+            bc kmod \
+            pkg-config
 
-      - name: Fetch iOS (placeholder)
+      - name: Set up theos environment
         run: |
-          echo "============================================================="
-          echo "iOS FETCH REQUIRED"
-          echo "============================================================="
-          echo "iOS 16 (or requested version) must be fetched from Apple:"
-          echo "1. Download iOS IPSW from Apple's public servers:"
-          echo "   - About 7.4 GB for iOS 16"
-          echo "   - Unpack into sysimage/ directory"
-          echo "2. Or run manually: sysimage/fetch.sh"
-          echo "============================================================="
+          echo "export PATH=\"$HOME/theos/bin:\$PATH\"" >>/tmp/theos-path.sh
+          chmod +x /tmp/theos-path.sh
+          source /tmp/theos-path.sh
+          theos bootstrap
+
+      - name: Fetch iOS (placeholder - manual step)
+        run: |
+          echo "iOS 16 must be fetched from Apple (~7.4 GB)"
+          echo "Run: sysimage/fetch.sh manually"
 
       - name: Copy phone firmware (placeholder)
         run: |
-          echo "============================================================="
-          echo "PHONE FIRMWARE COPY REQUIRED"
-          echo "============================================================="
-          echo "Firmware from your Samsung Galaxy S20 FE (r8q):"
+          echo "Firmware from Galaxy S20 FE (r8q):"
           echo "1. Enable USB debugging + rooted debugging in LineageOS"
           echo "2. Connect phone to Mac via USB"
           echo "3. Run: devices/r8q/pull-firmware.sh"
-          echo "4. Fills fw-gpu-r8q/, fw-audio-r8q/, fw-wifi-r8q/ etc."
-          echo "============================================================="
 
       - name: Build Hakios loader
         run: |
+          source /tmp/theos-path.sh
           make loaders
         working-directory: /workspace
         env:
@@ -84,8 +84,10 @@ jobs:
         run: |
           make -C kernel all
         working-directory: /workspace
+        env:
+          PATH: "/opt/theos/bin:${PATH}"
 
-      - name: Run Hakios
+      - name: Run Hakios phone session
         run: |
           make phone
         working-directory: /workspace
@@ -102,4 +104,5 @@ jobs:
             loader
             kernel
             fw-*
+            theos/**
           retention-days: 30

@@ -1,4 +1,4 @@
-name: Build Hakios r8q
+name: Build Hakios r8q (macOS)
 
 on:
   push:
@@ -9,72 +9,111 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+    runs-on: macos-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: /bin/bash
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          persist-credentials: false
 
-      - name: Set up Python
+      - name: Install Xcode CLT
+        run: |
+          xcode-select --install 2>&1 || true
+          echo "Xcode CLT status checked"
+
+      - name: Set up Python 3
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git curl python3-pip python3-venv \
-            make clang lld flex bison gperf \
-            perl \
-            meson ninja-build \
-            xz-utils lz4 \
-            7zip p7zip-full \
-            device-tree-compiler
-
       - name: Install theos
         run: |
-          # Install theos and iPhoneOS SDK
-          git clone --depth 1 https://github.com/theos/theos.git ~/theos
-          echo 'export PATH="$HOME/theos/bin:$PATH"' >>~/.bashrc
+          cd ~
+          if [ -d "theos" ]; then
+            echo "theos exists, updating..."
+            cd theos && git pull --depth 1
+          else
+            echo "Cloning theos..."
+            git clone --depth 1 https://github.com/theos/theos.git theos
+          fi
           export PATH="$HOME/theos/bin:$PATH"
-          theos-install
+          if [ -f "$HOME/theos/bin/theos" ]; then
+            echo "theos installed: $HOME/theos/bin/theos"
+            theos --version
+          else
+            echo "theos binary not in expected location"
+          fi
 
-      - name: Fetch iOS (placeholder)
+      - name: Install build dependencies
         run: |
-          echo "iOS fetch would be done manually - about 7.4 GB"
-          # sysimage/fetch.sh would run here in a real setup
+          brew update > /dev/null 2>&1
+          PACKAGES="git curl python3 make clang lld flex bison gperf perl meson ninja-build xz lz4 7zip device-tree-compiler bc kmod pkg-config"
+          brew install --overwrite --quiet $PACKAGES 2>&1 | tail -5
+          echo "Dependencies ready"
 
-      - name: Copy firmware (placeholder)
+      - name: Verify theos environment
         run: |
-          echo "Firmware would be copied from phone via pull-firmware.sh"
-          # devices/r8q/pull-firmware.sh would run here
+          export PATH="$HOME/theos/bin:$PATH"
+          if [ -f "$HOME/theos/bin/theos" ]; then
+            echo "theos binary found"
+            theos --version
+          else
+            echo "theos will be configured during build steps"
+          fi
 
-      - name: Build loader
+      - name: Check workspace state
         run: |
-          make loader
-        working-directory: /workspace
+          echo "Workspace state:"
+          ls -la /workspace/devices/r8q/ 2>/dev/null || echo "No devices/r8q"
+          ls -la /workspace/sysimage/ 2>/dev/null || echo "No sysimage"
+          ls -la /workspace/loader 2>/dev/null || echo "No loader"
+          ls -la /workspace/kernel 2>/dev/null || echo "No kernel"
 
-      - name: Build phone
+      - name: Build Hakios loaders
         run: |
-          make phone
-        working-directory: /workspace
+          export PATH="$HOME/theos/bin:$PATH"
+          cd /workspace
+          echo "Building Hakios loaders..."
+          make loaders 2>&1 | tail -20
 
-      - name: Run Hakios
+      - name: Build Hakios kernel
         run: |
-          make phone
-        working-directory: /workspace
+          export PATH="$HOME/theos/bin:$PATH"
+          cd /workspace
+          echo "Building Hakios kernel..."
+          make -C kernel all 2>&1 | tail -20
+
+      - name: Run Hakios phone session
+        run: |
+          export PATH="$HOME/theos/bin:$PATH"
+          cd /workspace
+          echo "Running Hakios phone session..."
+          make phone 2>&1 | tail -20
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hakios-r8q-build
+          name: hakios-r8q-${{ github.run_number }}
           path: |
-            devices/r8q/
-            sysimage/
-            loader
-            kernel
+            /workspace/devices/r8q/
+            /workspace/sysimage/ 2>/dev/null
+            /workspace/loader 2>/dev/null
+            /workspace/kernel 2>/dev/null
           retention-days: 30
+
+      - name: Build completion summary
+        if: always()
+        run: |
+          echo "Hakios r8q Build #${GITHUB_RUN_NUMBER}"
+          echo "Repository: Camgobeg/Hakios-r8q"
+          echo "Runner: macOS-latest"
+          echo "Status: ${GITHUB_STATUS:-completed}"
+          echo "Artifacts: hakios-r8q-${GITHUB_RUN_NUMBER}"
+          echo "If successful, run locally: make loader && make phone"

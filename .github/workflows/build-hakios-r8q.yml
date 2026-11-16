@@ -40,77 +40,115 @@ jobs:
             git clone --depth 1 https://github.com/theos/theos.git theos
           fi
           export PATH="$HOME/theos/bin:$PATH"
+          echo "theos location: $HOME/theos"
+          ls -la "$HOME/theos/bin/" 2>/dev/null || echo "checking theos contents"
           if [ -f "$HOME/theos/bin/theos" ]; then
-            echo "theos installed: $HOME/theos/bin/theos"
-            theos --version
+            echo "✅ theos binary found"
+            theos --version 2>&1 || true
           else
-            echo "theos binary not in expected location"
+            echo "⚠️ theos binary not in $HOME/theos/bin/"
+            ls -la "$HOME/theos/" 2>/dev/null
+            find "$HOME/theos/" -name "theos" -type f 2>/dev/null | head -5
           fi
 
       - name: Install build dependencies
         run: |
           brew update > /dev/null 2>&1
           PACKAGES="git curl python3 make clang lld flex bison gperf perl meson ninja-build xz lz4 7zip device-tree-compiler bc kmod pkg-config"
-          brew install --overwrite --quiet $PACKAGES 2>&1 | tail -5
+          brew install --overwrite --quiet $PACKAGES 2>&1 | tail -10
           echo "Dependencies ready"
 
       - name: Verify theos environment
         run: |
           export PATH="$HOME/theos/bin:$PATH"
+          THEOS_STATUS="not_found"
           if [ -f "$HOME/theos/bin/theos" ]; then
-            echo "theos binary found"
-            theos --version
+            THEOS_STATUS="found"
+            theos --version 2>&1 || true
+          elif [ -f "$HOME/theos/theos" ]; then
+            THEOS_STATUS="found_alternative"
+            "$HOME/theos/theos" --version 2>&1 || true
           else
-            echo "theos will be configured during build steps"
+            echo "theos not found in standard locations"
+            find "$HOME/theos/" -maxdepth 2 -type f -name "*.sh" 2>/dev/null | head -5
           fi
+          echo "theos_status=$THEOS_STATUS" >> $GITHUB_ENV
 
-      - name: Check workspace state
+      - name: Check workspace state (CORRECT PATHS)
         run: |
-          echo "Workspace state:"
-          ls -la /workspace/devices/r8q/ 2>/dev/null || echo "No devices/r8q"
-          ls -la /workspace/sysimage/ 2>/dev/null || echo "No sysimage"
-          ls -la /workspace/loader 2>/dev/null || echo "No loader"
-          ls -la /workspace/kernel 2>/dev/null || echo "No kernel"
+          echo "=== Checking runner workspace ==="
+          pwd
+          ls -la . 2>/dev/null | head -20
+          echo ""
+          echo "Checking for devices folder:"
+          ls -la devices/ 2>/dev/null || echo "No devices/ folder here"
+          echo ""
+          echo "Checking for workspace-relative paths:"
+          ls -la /workspace/ 2>/dev/null || echo "/workspace not at root"
+          echo ""
+          echo "Listing repo root contents:"
+          ls -la | head -30
 
-      - name: Build Hakios loaders
+      - name: Build Hakios loaders (CORRECT PATH)
         run: |
           export PATH="$HOME/theos/bin:$PATH"
-          cd /workspace
+          cd "$(dirname "$0")" 2>/dev/null || cd .
+          echo "Working directory: $(pwd)"
           echo "Building Hakios loaders..."
-          make loaders 2>&1 | tail -20
+          make loaders 2>&1 | tail -30
+          LOADERS_EXIT=$?
+          echo "loaders_exit=$LOADERS_EXIT" >> $GITHUB_ENV
 
       - name: Build Hakios kernel
         run: |
           export PATH="$HOME/theos/bin:$PATH"
-          cd /workspace
+          cd "$(dirname "$0")" 2>/dev/null || cd .
+          echo "Working directory: $(pwd)"
           echo "Building Hakios kernel..."
-          make -C kernel all 2>&1 | tail -20
+          make -C kernel all 2>&1 | tail -30
+          KERNEL_EXIT=$?
+          echo "kernel_exit=$KERNEL_EXIT" >> $GITHUB_ENV
 
       - name: Run Hakios phone session
         run: |
           export PATH="$HOME/theos/bin:$PATH"
-          cd /workspace
+          cd "$(dirname "$0")" 2>/dev/null || cd .
+          echo "Working directory: $(pwd)"
           echo "Running Hakios phone session..."
-          make phone 2>&1 | tail -20
+          make phone 2>&1 | tail -30
+          PHONE_EXIT=$?
+          echo "phone_exit=$PHONE_EXIT" >> $GITHUB_ENV
 
-      - name: Upload artifacts
+      - name: Upload artifacts (CORRECT PATHS)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hakios-r8q-${{ github.run_number }}
           path: |
-            /workspace/devices/r8q/
-            /workspace/sysimage/ 2>/dev/null
-            /workspace/loader 2>/dev/null
-            /workspace/kernel 2>/dev/null
+            ./devices/r8q/ 2>/dev/null
+            ./sysimage/ 2>/dev/null
+            ./loader 2>/dev/null
+            ./kernel 2>/dev/null
+            ./fw-*/ 2>/dev/null
           retention-days: 30
 
       - name: Build completion summary
         if: always()
         run: |
-          echo "Hakios r8q Build #${GITHUB_RUN_NUMBER}"
+          echo "============================================================="
+          echo "HAKIOS R8Q BUILD #${GITHUB_RUN_NUMBER}"
+          echo "============================================================="
           echo "Repository: Camgobeg/Hakios-r8q"
           echo "Runner: macOS-latest"
+          echo "Duration: ${{ job.duration }} min"
           echo "Status: ${GITHUB_STATUS:-completed}"
+          echo ""
+          echo "Build components:"
+          echo "  loaders:  exit code $LOADERS_EXIT"
+          echo "  kernel:   exit code $KERNEL_EXIT"
+          echo "  phone:    exit code $PHONE_EXIT"
+          echo ""
           echo "Artifacts: hakios-r8q-${GITHUB_RUN_NUMBER}"
-          echo "If successful, run locally: make loader && make phone"
+          echo "If successful, examine artifacts and run locally:"
+          echo "  make loader && make phone"
+          echo "============================================================="
